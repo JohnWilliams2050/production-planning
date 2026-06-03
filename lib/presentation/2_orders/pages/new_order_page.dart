@@ -12,7 +12,9 @@ import 'package:production_planning/presentation/2_orders/widgets/high_order/add
 import 'package:production_planning/shared/functions/functions.dart';
 
 class NewOrderPage extends StatelessWidget {
-  const NewOrderPage({super.key});
+  final int? editOrderId;
+
+  const NewOrderPage({super.key, this.editOrderId});
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +22,9 @@ class NewOrderPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Crear Nuevo Programa de Produccion'),
+        title: Text(editOrderId != null
+            ? 'Editar Programa de Producción'
+            : 'Crear Nuevo Programa de Produccion'),
         backgroundColor: colorScheme.primary,
         foregroundColor: colorScheme.onPrimary,
       ),
@@ -61,10 +65,14 @@ class NewOrderPage extends StatelessWidget {
           },
           child: BlocBuilder<NewOrderBloc, NewOrderState>(
             builder: (context, state) {
-              final bloc = BlocProvider.of<NewOrderBloc>(context);
+              final provider = BlocProvider.of<NewOrderBloc>(context);
 
               if (state is NewOrdersInitialState) {
-                bloc.retrieveSequences();
+                if (editOrderId != null) {
+                  provider.loadOrderForEdit(editOrderId!);
+                } else {
+                  provider.retrieveSequences();
+                }
                 return const Center(child: CircularProgressIndicator());
               }
 
@@ -113,6 +121,32 @@ class NewOrderPage extends StatelessWidget {
                       child: const Text('Agregar Job'),
                     ),
                     const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          bool isValid = _validateForm(state);
+
+                          if (!isValid) {
+                            _showValidationDialog(context, colorScheme);
+                          } else {
+                            if (editOrderId != null) {
+                              provider.updateOrder(editOrderId!);
+                            } else {
+                              provider.saveOrder();
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colorScheme.secondary,
+                          foregroundColor: colorScheme.onSecondary,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: Text(editOrderId != null
+                            ? 'Guardar Cambios'
+                            : 'Crear programa de produccion'),
                     ElevatedButton(
                       onPressed: () =>
                           _showMatrixDialog(context, state, colorScheme),
@@ -131,7 +165,7 @@ class NewOrderPage extends StatelessWidget {
                         if (!_validateForm(state)) {
                           _showValidationDialog(context, colorScheme);
                         } else {
-                          bloc.saveOrder();
+                          provider.saveOrder();
                         }
                       },
                       style: ElevatedButton.styleFrom(
@@ -142,8 +176,6 @@ class NewOrderPage extends StatelessWidget {
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: const Text('Crear programa de produccion'),
-                    ),
                   ],
                 ),
               );

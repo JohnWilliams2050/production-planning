@@ -47,6 +47,7 @@ class AddJobWidget extends StatefulWidget {
     required this.idController,
     required this.index,
     required this.sequences,
+    this.selectedSequence,
   }) : super(key: stateKey);
 
   factory AddJobWidget({
@@ -59,6 +60,7 @@ class AddJobWidget extends StatefulWidget {
     required TextEditingController? idController,
     required int index,
     required List<dartz.Tuple2<int, String>> sequences,
+    int? selectedSequence,
     GlobalKey<AddJobState>? stateKey,
   }) {
     final key = stateKey ?? GlobalKey<AddJobState>();
@@ -73,6 +75,7 @@ class AddJobWidget extends StatefulWidget {
       idController: idController,
       index: index,
       sequences: sequences,
+      selectedSequence: selectedSequence,
     );
   }
 
@@ -313,13 +316,26 @@ class AddJobState extends State<AddJobWidget> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Align(
-              alignment: Alignment.topRight,
-              child: IconButton(
-                onPressed: () =>
-                    BlocProvider.of<NewOrderBloc>(context).removeJob(widget.index),
-                icon: Icon(Icons.delete, color: colorScheme.error),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  onPressed: () {
+                    BlocProvider.of<NewOrderBloc>(context)
+                        .duplicateJob(widget.index);
+                  },
+                  icon: Icon(Icons.copy_all, color: colorScheme.primary),
+                  tooltip: 'Duplicar job',
+                ),
+                IconButton(
+                  onPressed: () {
+                    BlocProvider.of<NewOrderBloc>(context)
+                        .removeJob(widget.index);
+                  },
+                  icon: Icon(Icons.delete, color: colorScheme.error),
+                  tooltip: 'Eliminar job',
+                ),
+              ],
             ),
             TextFormField(
               controller: widget.idController,
@@ -354,6 +370,7 @@ class AddJobState extends State<AddJobWidget> {
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             ),
+            
             const SizedBox(height: 8),
             TextFormField(
               controller: widget.priorityController,
@@ -373,21 +390,22 @@ class AddJobState extends State<AddJobWidget> {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             ),
             const SizedBox(height: 8),
+            
             Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: selectDate('Seleccione fecha de disponibilidad',
-                      availableDate, availableHour),
-                ),
-                const Expanded(flex: 2, child: SizedBox()),
-                Expanded(
-                  flex: 3,
-                  child: selectDate(
-                      'Seleccione fecha de entrega', dueDate, dueHour),
-                ),
-              ],
-            ),
+  children: [
+    Expanded(
+      child: selectDate('Seleccione fecha de disponibilidad',
+          availableDate, availableHour),
+    ),
+    const SizedBox(width: 12),
+    Expanded(
+      child: selectDate(
+          'Seleccione fecha de entrega', dueDate, dueHour),
+    ),
+  ],
+),
+
+           
             const SizedBox(height: 8),
             DropdownButton<int>(
               value: selectedSequenceValue,
@@ -429,61 +447,126 @@ class AddJobState extends State<AddJobWidget> {
   // ── date/time row widgets (unchanged) ─────────────────────────────────────
 
   Widget selectDate(String label, DateTime? date, TimeOfDay? hour) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Row(
+  final colorScheme = Theme.of(context).colorScheme;
+  final hasDate = date != null;
+
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      border: Border.all(
+        color: hasDate ? colorScheme.primary : colorScheme.outline,
+        width: 1.2,
+      ),
+      borderRadius: BorderRadius.circular(10),
+      color: hasDate ? colorScheme.primary.withOpacity(0.04) : Colors.transparent,
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         selectHour(hour, date, label),
         Text(
-          date == null ? label : DateFormat('dd/MM/yyyy').format(date),
-          style: TextStyle(color: colorScheme.onSurface),
+          label == 'Seleccione fecha de disponibilidad' ? 'Disponibilidad' : 'Entrega',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurfaceVariant,
+            letterSpacing: 0.3,
+          ),
         ),
-        const Spacer(),
-        IconButton(
-          icon: Icon(Icons.calendar_today, color: colorScheme.primary),
-          onPressed: () => _selectDate(context, label),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            selectHour(hour, date, label),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                hasDate ? DateFormat('dd/MM/yyyy').format(date) : 'Seleccionar',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: hasDate ? colorScheme.onSurface : colorScheme.onSurfaceVariant,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            IconButton(
+              icon: Icon(Icons.calendar_today_rounded, size: 16, color: colorScheme.primary),
+              onPressed: () => _selectDate(context, label),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+          ],
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 
-  TextButton selectHour(TimeOfDay? hour, DateTime? date, String label) {
-    return TextButton(
-      onPressed: () async {
-        final timeOfDay = await showTimePicker(
-          context: context,
-          initialTime: hour ?? TimeOfDay.now(),
-        );
-        if (timeOfDay != null) {
-          setState(() {
-            if (label == 'Seleccione fecha de disponibilidad') {
-              availableHour = timeOfDay;
-              widget.availableHour = timeOfDay;
-              if (availableDate != null) {
-                availableDate = DateTime(
-                  availableDate!.year, availableDate!.month, availableDate!.day,
-                  availableHour!.hour, availableHour!.minute,
-                );
-                widget.availableDate = availableDate;
-              }
-            } else if (label == 'Seleccione fecha de entrega') {
-              dueHour = timeOfDay;
-              widget.dueHour = timeOfDay;
-              if (dueDate != null) {
-                dueDate = DateTime(
-                  dueDate!.year, dueDate!.month, dueDate!.day,
-                  dueHour!.hour, dueHour!.minute,
-                );
-                widget.dueDate = dueDate;
-              }
+ TextButton selectHour(TimeOfDay? hour, DateTime? date, String label) {
+  final colorScheme = Theme.of(context).colorScheme;
+  return TextButton(
+    onPressed: () async {
+      final timeOfDay = await showTimePicker(
+        context: context,
+        initialTime: hour ?? TimeOfDay.now(),
+        initialEntryMode: TimePickerEntryMode.input,
+      );
+
+      if (timeOfDay != null) {
+        setState(() {
+          if (label == 'Seleccione fecha de disponibilidad') {
+            availableHour = timeOfDay;
+            widget.availableHour = timeOfDay;
+            if (availableDate != null) {
+              availableDate = DateTime(
+                availableDate!.year,
+                availableDate!.month,
+                availableDate!.day,
+                availableHour!.hour,
+                availableHour!.minute,
+              );
+              widget.availableDate = availableDate;
             }
-          });
-        }
-      },
-      child: hour == null
-          ? const Text("Hora")
-          : Text(
-              "${hour.hour.toString().padLeft(2, '0')}:"
-              "${hour.minute.toString().padLeft(2, '0')}"),
+          } else if (label == 'Seleccione fecha de entrega') {
+            dueHour = timeOfDay;
+            widget.dueHour = timeOfDay;
+            if (dueDate != null) {
+              dueDate = DateTime(
+                dueDate!.year,
+                dueDate!.month,
+                dueDate!.day,
+                dueHour!.hour,
+                dueHour!.minute,
+              );
+              widget.dueDate = dueDate;
+            }
+          }
+        });
+      }
+    },
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.schedule_rounded, size: 14, color: colorScheme.primary),
+        const SizedBox(width: 4),
+        hour == null
+            ? const Text("Hora")
+            : Text(
+                "${hour.hour.toString().padLeft(2, '0')}:${hour.minute.toString().padLeft(2, '0')}"),
+      ],
+    ),
+  );
+}
+
+  Widget _buildPreemptionOptionRow(
+    String label,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
+    return Row(
+      children: [
+        Expanded(child: Text(label)),
+        Switch(value: value, onChanged: onChanged),
+      ],
     );
   }
 
@@ -658,6 +741,12 @@ class AddJobState extends State<AddJobWidget> {
     int? selectedMachineId =
         existingMachineId ?? (machines.isNotEmpty ? machines[0].id : null);
 
+    bool maintenancePreempt = selectedMachineId != null &&
+        (_preemptionMatrix[selectedMachineId] ?? 1) == 1;
+    bool restPreempt = maintenancePreempt;
+    bool endOfDayPreempt = maintenancePreempt;
+
+    // Initialize with existing values or defaults
     final stationDefaults = _stationTimes[machineTypeId] ??
         bloc.getStandardTimesForType(machineTypeId);
 
@@ -677,97 +766,178 @@ class AddJobState extends State<AddJobWidget> {
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text('Tiempos para ${task.machineName ?? 'Estación'}'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── machine selector ──────────────────────────────────────
-                if (machines.isNotEmpty)
-                  DropdownButton<int>(
-                    value: selectedMachineId,
-                    isExpanded: true,
-                    items: machines
-                        .map((m) => DropdownMenuItem<int>(
-                            value: m.id, child: Text(m.name)))
-                        .toList(),
-                    onChanged: (v) =>
-                        setDialogState(() => selectedMachineId = v),
-                  ),
-                const SizedBox(height: 16),
+builder: (dialogContext) {
+  return StatefulBuilder(
+    builder: (context, setDialogState) {
+      return AlertDialog(
+        title: Text('Tiempos para ${task.machineName ?? 'Estación'}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── machine selector ──────────────────────────────
+              if (machines.isNotEmpty)
+                DropdownButton<int>(
+                  value: selectedMachineId,
+                  isExpanded: true,
+                  items: machines
+                      .map(
+                        (m) => DropdownMenuItem<int>(
+                          value: m.id,
+                          child: Text(m.name),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    setDialogState(() {
+                      selectedMachineId = v;
 
-                // ── processing time ───────────────────────────────────────
-                const Text('Tiempo de Procesamiento:',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: processingController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      hintText: 'HH:MM:SS',
-                      border: OutlineInputBorder()),
-                  inputFormatters: [_HhMmSsTextInputFormatter()],
-                ),
-                const SizedBox(height: 16),
+                      maintenancePreempt =
+                          (selectedMachineId != null &&
+                                  (_preemptionMatrix[selectedMachineId] ?? 1) ==
+                                      1);
 
-                // ── rest time ─────────────────────────────────────────────
-                const Text('Tiempo de Descanso:',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: restController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      hintText: 'HH:MM:SS',
-                      border: OutlineInputBorder()),
-                  inputFormatters: [_HhMmSsTextInputFormatter()],
+                      restPreempt = maintenancePreempt;
+                      endOfDayPreempt = maintenancePreempt;
+                    });
+                  },
                 ),
 
-                // ── info note ─────────────────────────────────────────────
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.blue.shade200),
+              const SizedBox(height: 16),
+
+              // ── processing time ──────────────────────────────
+              const Text(
+                'Tiempo de Procesamiento:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              TextField(
+                controller: processingController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  hintText: 'HH:MM:SS',
+                  border: OutlineInputBorder(),
+                ),
+                inputFormatters: [_HhMmSsTextInputFormatter()],
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── rest time ────────────────────────────────────
+              const Text(
+                'Tiempo de Descanso:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              TextField(
+                controller: restController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  hintText: 'HH:MM:SS',
+                  border: OutlineInputBorder(),
+                ),
+                inputFormatters: [_HhMmSsTextInputFormatter()],
+              ),
+
+              const SizedBox(height: 12),
+
+              // ── setup time info ──────────────────────────────
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: Colors.blue.shade200,
                   ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.info_outline,
-                          size: 16, color: Colors.blue),
-                      SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'El tiempo de alistamiento entre tipos de '
-                          'job se configura en la matriz de tiempos '
-                          'de alistamiento.',
-                          style: TextStyle(
-                              fontSize: 11, color: Colors.blue),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: Colors.blue,
+                    ),
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'El tiempo de alistamiento entre tipos de job '
+                        'se configura en la matriz de tiempos de alistamiento.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── preemption section ───────────────────────────
+              const Text(
+                'Permite Interrupciones (Preemption):',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+
+              const SizedBox(height: 8),
+
+              if (selectedMachineId != null)
+                Column(
+                  children: [
+                    _buildPreemptionOptionRow(
+                      '¿Se puede interrumpir para mantenimiento?',
+                      maintenancePreempt,
+                      (value) {
+                        setDialogState(() {
+                          maintenancePreempt = value;
+                        });
+                      },
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    _buildPreemptionOptionRow(
+                      '¿Se puede interrumpir para descanso?',
+                      restPreempt,
+                      (value) {
+                        setDialogState(() {
+                          restPreempt = value;
+                        });
+                      },
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    _buildPreemptionOptionRow(
+                      '¿Se puede interrumpir por la finalización de la jornada de trabajo?',
+                      endOfDayPreempt,
+                      (value) {
+                        setDialogState(() {
+                          endOfDayPreempt = value;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Aceptar'),
-            ),
-          ],
         ),
-      ),
-    );
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      );
+    },
+  );
 
     if (result == true) {
       final processingMinutes =
@@ -776,14 +946,23 @@ class AddJobState extends State<AddJobWidget> {
 
       setState(() {
         if (selectedMachineId != null) {
-          final newSelMachine = machines.firstWhere((m) => m.id == selectedMachineId);
+          _preemptionMatrix[selectedMachineId!] =
+              (maintenancePreempt ||
+                      restPreempt ||
+                      endOfDayPreempt)
+                  ? 1
+                  : 0;
+
+          final newSelMachine =
+              machines.firstWhere((m) => m.id == selectedMachineId);
+
           _selectedMachines[machineTypeId] = newSelMachine;
 
           _explicitTaskMachineMinutes.putIfAbsent(task.id!, () => {});
           _explicitTaskMachineMinutes[task.id!]!.clear();
           _explicitTaskMachineMinutes[task.id!]![selectedMachineId!] = {
             'processing': processingMinutes,
-            'preparation': 0, // comes from matrix — always 0 here
+            'preparation': 0, // setup times come from matrix
             'rest': restMinutes,
           };
         }
@@ -896,4 +1075,52 @@ class _HhMmSsTextInputFormatter extends TextInputFormatter {
         text: text,
         selection: TextSelection.collapsed(offset: text.length));
   }
+}
+Widget _bottomSheetSegment(TextEditingController ctrl, String label, int max) {
+  return Column(
+    children: [
+      Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      const SizedBox(height: 6),
+      SizedBox(
+        width: 72,
+        child: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          maxLength: 2,
+          autofocus: label == 'Horas',
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            _MaxValueFormatter(max),
+          ],
+          decoration: InputDecoration(
+            counterText: '',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
+        ),
+      ),
+    ],
+  );
+}
+
+class _MaxValueFormatter extends TextInputFormatter {
+  final int max;
+  _MaxValueFormatter(this.max);
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+    final val = int.tryParse(newValue.text);
+    if (val == null || val > max) return oldValue;
+    return newValue;
+  }
+}
 }

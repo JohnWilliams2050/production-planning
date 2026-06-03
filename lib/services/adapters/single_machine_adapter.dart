@@ -80,9 +80,18 @@ class SingleMachineAdapter {
     }
 
     //we get the output
-        final output = SingleMachine(
-          0, order.regDate, Tuple2(START_SCHEDULE, END_SCHEDULE), input, rule.toUpperCase())
-        .output;
+    final output = SingleMachine(
+      0,
+      order.regDate,
+      Tuple2(START_SCHEDULE, END_SCHEDULE),
+      input,
+      rule.toUpperCase(),
+      machineInactivities: machineEntity.scheduledInactivities,
+      continueCapacity: machineEntity.continueCapacity,
+      restTime: Duration(
+        minutes: (60 * machineEntity.restPercentage / 100).round(),
+      ),
+    ).output;
 
     final Map<int, int> jobCounter = {};
     final tasks = output.map((out) {

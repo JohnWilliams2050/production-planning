@@ -1,6 +1,7 @@
 import 'package:dartz/dartz.dart';
 import 'package:production_planning/dependency_injection.dart';
 import 'package:production_planning/entities/machine_entity.dart';
+import 'package:production_planning/entities/machine_inactivity_entity.dart';
 import 'package:production_planning/entities/metrics.dart';
 import 'package:production_planning/entities/order_entity.dart';
 import 'package:production_planning/entities/planning_machine_entity.dart';
@@ -94,13 +95,41 @@ class FlexibleFlowShopAdapter {
       machinesAvailability[machine.id!] = order.regDate;
     }
 
+    // Setup matrix support
     final Map<int, Map<String, Map<String, int>>>? stateSetupMatrix =
-        buildMachineStateSetupMatrix(machines, order.setupTimeMatrix);
-    final Map<int, Map<int, String>> jobStates =
-        buildJobMachineStates(order.orderJobs!, machines);
+        buildMachineStateSetupMatrix(
+      machines,
+      order.setupTimeMatrix,
+    );
 
-    // Ejecutar el algoritmo Flexible Flow Shop
+    final Map<int, Map<int, String>> jobStates =
+        buildJobMachineStates(
+      order.orderJobs!,
+      machines,
+    );
+
+    // Machine inactivity support
+    final Map<int, List<MachineInactivityEntity>> machineInactivitiesMap = {};
+    final Map<int, int> machineContinueCapacityMap = {};
+    final Map<int, Duration?> machineRestTimeMap = {};
+
+    for (final machine in machines) {
+      machineInactivitiesMap[machine.id!] =
+          machine.scheduledInactivities;
+
+      machineContinueCapacityMap[machine.id!] =
+          machine.continueCapacity;
+
+      machineRestTimeMap[machine.id!] =
+          Duration(
+            minutes:
+                (60 * machine.restPercentage / 100).round(),
+          );
+    }
+
+    // Execute Flexible Flow Shop
     List<FlexibleFlowOutput> output;
+
     try {
       output = FlexibleFlowShop(
         order.regDate,
@@ -108,11 +137,20 @@ class FlexibleFlowShopAdapter {
         inputJobs,
         machinesAvailability,
         rule.toUpperCase(),
+
+        // setup times
         stateSetupMatrix: stateSetupMatrix,
         jobStates: jobStates,
+
+        // machine restrictions
+        machineInactivities: machineInactivitiesMap,
+        machineContinueCapacity: machineContinueCapacityMap,
+        machineRestTime: machineRestTimeMap,
       ).output;
     } catch (error, stack) {
-      print('FlexibleFlowShopAdapter.flexibleFlowShopAdapter error: ${error.toString()}');
+      print(
+        'FlexibleFlowShopAdapter.flexibleFlowShopAdapter error: ${error.toString()}',
+      );
       print(stack.toString());
       return null;
     }
