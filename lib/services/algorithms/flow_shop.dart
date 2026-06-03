@@ -54,7 +54,10 @@ class FlowShop {
   /// changeoverMatrix:
   /// { machineId : { previousSequenceId_or_null : { currentSequenceId : Duration } } }
   final Map<int, Map<int?, Map<int, Duration>>> changeoverMatrix;
+  final Map<int, Map<String, Map<String, int>>>? stateSetupMatrix;
+  final Map<int, Map<int, String>>? jobStates;
   final Map<int, int?> _machineLastSequence = {};
+  final Map<int, int?> _machineLastJob = {};
 
   // Machine inactivity support
   final Map<int, List<MachineInactivityEntity>> machineInactivities;
@@ -72,13 +75,18 @@ class FlowShop {
     this.machineInactivities = const {},
     this.machineContinueCapacity = const {},
     this.machineRestTime = const {},
+    this.stateSetupMatrix,
+    this.jobStates,
   }) : changeoverMatrix = changeoverMatrix ?? {} {
     _initializeMachineLastSequence();
-    // Inicializar contador de procesamiento por máquina
+
     for (final machineId in machinesAvailability.keys) {
       machineProcessedCount[machineId] = 0;
     }
-    switch (rule) {
+
+    final r = rule.toUpperCase();
+
+    switch (r) {
       case "EDD":
         eddRule();
         break;
@@ -137,13 +145,16 @@ class FlowShop {
     for (final job in inputJobs) {
       for (final task in job.taskSequence) {
         _machineLastSequence.putIfAbsent(task.value2, () => null);
+        _machineLastJob.putIfAbsent(task.value2, () => null);
       }
     }
     for (final machineId in machinesAvailability.keys) {
       _machineLastSequence.putIfAbsent(machineId, () => null);
+      _machineLastJob.putIfAbsent(machineId, () => null);
     }
     for (final machineId in changeoverMatrix.keys) {
       _machineLastSequence.putIfAbsent(machineId, () => null);
+      _machineLastJob.putIfAbsent(machineId, () => null);
     }
   }
 
@@ -270,6 +281,7 @@ class FlowShop {
 
   void _assignJobToMachines(FlowShopInput job) {
     DateTime jobStartTime = job.availableDate;
+    DateTime? actualStartTime;
     Map<int, Tuple2<int, Range>> scheduling = {};
 
     for (var task in job.taskSequence) {
@@ -282,14 +294,29 @@ class FlowShop {
       startTime = _adjustForWorkingSchedule(startTime);
 
       final int? previousSequence = _machineLastSequence.putIfAbsent(machineId, () => null);
-      final Duration setupDuration = _getSetupDuration(machineId, job.sequenceId, previousSequence);
+      final int? previousJob = _machineLastJob.putIfAbsent(machineId, () => null);
+      final Duration setupDuration = _getSetupDuration(
+        machineId,
+        job.sequenceId,
+        previousSequence,
+        currentJobId: job.jobId,
+        previousJobId: previousJob,
+      );
       final Duration totalDuration = duration + setupDuration;
 
-      final end = startTime.add(totalDuration);
-      final adjustedEnd = _adjustEndTimeWithInactivities(machineId, startTime, end);
+      DateTime rawEnd = startTime.add(totalDuration);
 
-      // Aplicar descanso por continueCapacity
+      DateTime adjustedEnd =
+          _adjustEndTimeWithInactivities(
+            machineId,
+            startTime,
+            rawEnd,
+          );
+
+      actualStartTime ??= startTime;
+
       DateTime finalEnd = adjustedEnd;
+
       final capacity = machineContinueCapacity[machineId] ?? 0;
       final restTime = machineRestTime[machineId];
 
@@ -303,16 +330,21 @@ class FlowShop {
         }
       }
 
-      scheduling[machineId] = Tuple2(taskId, Range(startTime, adjustedEnd));
+      scheduling[machineId] =
+          Tuple2(taskId, Range(startTime, adjustedEnd));
+
       machinesAvailability[machineId] = finalEnd;
+
       _machineLastSequence[machineId] = job.sequenceId;
+      _machineLastJob[machineId] = job.jobId;
+
       jobStartTime = adjustedEnd;
     }
 
     output.add(
       FlowShopOutput(
         job.jobId,
-        job.availableDate,
+        actualStartTime ?? job.availableDate,
         job.dueDate,
         jobStartTime,
         scheduling,
@@ -320,15 +352,45 @@ class FlowShop {
     );
   }
 
-  Duration _getSetupDuration(int machineId, int currentSequenceId, int? previousSequenceId) {
+  Duration _getSetupDuration(
+    int machineId,
+    int currentSequenceId,
+    int? previousSequenceId, {
+    int? currentJobId,
+    int? previousJobId,
+  }) {
+    // Try state-based setup matrix first (if all data is available)
+    if (stateSetupMatrix != null && 
+        jobStates != null && 
+        currentJobId != null && 
+        previousJobId != null &&
+        previousJobId > 0) {
+      final machineStates = stateSetupMatrix![machineId];
+      if (machineStates != null) {
+        final previousState = jobStates![previousJobId]?[machineId];
+        final currentState = jobStates![currentJobId]?[machineId];
+        if (previousState != null && currentState != null) {
+          final setupMinutes = machineStates[previousState]?[currentState];
+          if (setupMinutes != null) {
+            return Duration(minutes: setupMinutes);
+          }
+        }
+      }
+    }
+
+    // Fallback to changeover matrix (sequence-based)
     final machineMatrix = changeoverMatrix[machineId];
     if (machineMatrix == null) return Duration.zero;
 
-    final previousDurations = machineMatrix[previousSequenceId];
-    if (previousDurations != null && previousDurations.containsKey(currentSequenceId)) {
-      return previousDurations[currentSequenceId]!;
+    // Try specific previous sequence
+    if (previousSequenceId != null) {
+      final previousDurations = machineMatrix[previousSequenceId];
+      if (previousDurations != null && previousDurations.containsKey(currentSequenceId)) {
+        return previousDurations[currentSequenceId]!;
+      }
     }
 
+    // Try default (null) mapping
     final defaultDurations = machineMatrix[null];
     if (defaultDurations != null && defaultDurations.containsKey(currentSequenceId)) {
       return defaultDurations[currentSequenceId]!;
@@ -336,6 +398,7 @@ class FlowShop {
 
     return Duration.zero;
   }
+
 
   int _totalProcessingTime(FlowShopInput job) {
     return job.taskTimesInMachines.values.fold(0, (sum, duration) => sum + duration.inMinutes);
@@ -585,12 +648,14 @@ class FlowShop {
   int _calculateMakespan(List<FlowShopInput> jobSequence) {
     Map<int, DateTime> currentMachineAvailability = {};
     Map<int, int?> currentMachineSequence = {};
+    Map<int, int?> currentMachineJob = {};
 
     for (var job in jobSequence) {
       for (var task in job.taskSequence) {
         int machineId = task.value2;
         currentMachineAvailability[machineId] = startDate;
         currentMachineSequence[machineId] = null;
+        currentMachineJob[machineId] = null;
       }
     }
 
@@ -609,13 +674,28 @@ class FlowShop {
         startTime = _adjustForWorkingSchedule(startTime);
 
         final int? previousSequence = currentMachineSequence.putIfAbsent(machineId, () => null);
-        final Duration setupDuration = _getSetupDuration(machineId, job.sequenceId, previousSequence);
+        final int? previousJob = currentMachineJob.putIfAbsent(machineId, () => null);
+        final Duration setupDuration = _getSetupDuration(
+          machineId,
+          job.sequenceId,
+          previousSequence,
+          currentJobId: job.jobId,
+          previousJobId: previousJob,
+        );
         final Duration totalDuration = duration + setupDuration;
 
-        DateTime endTime = _calculateEndWithSchedule(startTime, totalDuration);
+        DateTime rawEnd = startTime.add(totalDuration);
+
+        DateTime endTime =
+            _adjustEndTimeWithInactivities(
+                machineId,
+                startTime,
+                rawEnd,
+            );
 
         currentMachineAvailability[machineId] = endTime;
         currentMachineSequence[machineId] = job.sequenceId;
+        currentMachineJob[machineId] = job.jobId;
         jobStartTime = endTime;
       }
 
@@ -677,12 +757,14 @@ class FlowShop {
   int _evaluateFitnessFlowShop(List<FlowShopInput> jobSequence) {
     Map<int, DateTime> machineAvailability = {};
     Map<int, int?> machineSequence = {};
+    Map<int, int?> machineJob = {};
 
     for (var job in jobSequence) {
       for (var task in job.taskSequence) {
         int machineId = task.value2;
         machineAvailability[machineId] = startDate;
         machineSequence[machineId] = null;
+        machineJob[machineId] = null;
       }
     }
 
@@ -700,14 +782,34 @@ class FlowShop {
         DateTime startTime = jobStartTime.isAfter(machineAvailable) ? jobStartTime : machineAvailable;
         startTime = _adjustForWorkingSchedule(startTime);
 
-        final int? previousSequence = machineSequence.putIfAbsent(machineId, () => null);
-        final Duration setupDuration = _getSetupDuration(machineId, job.sequenceId, previousSequence);
+        final int? previousSequence =
+            machineSequence.putIfAbsent(
+                machineId,
+                () => null,
+            );
+
+        final int? previousJob =
+            machineJob.putIfAbsent(
+                machineId,
+                () => null,
+            );
+
+        final Duration setupDuration =
+            _getSetupDuration(
+              machineId,
+              job.sequenceId,
+              previousSequence,
+              currentJobId: job.jobId,
+              previousJobId: previousJob,
+            );
         final Duration totalDuration = duration + setupDuration;
 
         DateTime endTime = _calculateEndWithSchedule(startTime, totalDuration);
+        endTime = _adjustEndTimeWithInactivities(machineId, startTime, endTime);
 
         machineAvailability[machineId] = endTime;
         machineSequence[machineId] = job.sequenceId;
+        machineJob[machineId] = job.jobId;
         jobStartTime = endTime;
       }
 

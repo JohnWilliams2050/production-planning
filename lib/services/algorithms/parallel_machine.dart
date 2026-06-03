@@ -61,11 +61,13 @@ class ParallelMachine {
     this.machineContinueCapacity = const {},
     this.machineRestTime = const {},
   }) {
-    // Inicializar contador de procesamiento por máquina
     for (final machineId in machines.keys) {
       machineProcessedCount[machineId] = 0;
     }
-    switch (rule) {
+
+    final r = rule.toUpperCase();
+
+    switch (r) {
       case "SPT":
         sptRule();
         break;
@@ -111,8 +113,6 @@ class ParallelMachine {
       case "GENETICS":
         geneticsRule();
         break;
-
-
     }
 
   }
