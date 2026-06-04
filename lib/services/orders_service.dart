@@ -588,7 +588,7 @@ class OrdersService {
               orderRepository: orderRepo,
               setupTimeService: setupTimeService)
           .openShopAdapter(sch.value1, sch.value2)),
-      String() => Left(EnviromentNotCorrectFailure()),
+      String() => Left(EnviromentNotCorrectFailure()), //
     };
   }
 }
